@@ -1,0 +1,191 @@
+﻿using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Http;
+using Microsoft.Data.SqlClient;
+using Microsoft.Extensions.Logging;
+using System;
+using System.Data.Common;
+using System.Net;
+using System.Text.Json;
+using System.Threading.Tasks;
+using static System.Runtime.InteropServices.JavaScript.JSType;
+
+
+
+namespace GlobalExceptionHandling.Configurations
+{
+    public class ErrorHandlerMiddleware
+    {
+        private readonly RequestDelegate _next;
+        private readonly ILoggerService _logger;
+
+
+
+        public ErrorHandlerMiddleware(RequestDelegate next, ILoggerService logger)
+        {
+            _next = next;
+            _logger = logger;
+        }
+
+
+
+        public async Task Invoke(HttpContext httpContext)
+        {
+            var options = new JsonSerializerOptions
+            {
+                PropertyNamingPolicy = JsonNamingPolicy.CamelCase
+            };
+
+
+
+            try
+            {
+                await _next(httpContext);
+            }
+            catch (Exception error) when (error is SqlException || error is DbException)
+            {
+                _logger.LogError(null,error, error.Message);
+                string errorMessage = "Unable to fetch data from database";
+                int responseCode = (int)HttpStatusCode.InternalServerError;
+            
+                var response = httpContext.Response;
+                response.ContentType = "application/json";
+                response.StatusCode = (int)HttpStatusCode.InternalServerError;
+
+
+
+                if (error is SqlException sqlException)
+                {
+                    if (sqlException.Number == 2601)
+                    {
+                        errorMessage = "Duplicates are not allowed";
+                        response.StatusCode = (int)HttpStatusCode.BadRequest;
+                        responseCode = (int)HttpStatusCode.BadRequest;
+                    }
+
+
+
+                    else if (sqlException.Number == 50000)
+                    {
+                        errorMessage = sqlException.Message;
+                        response.StatusCode = (int)HttpStatusCode.BadRequest;
+                        responseCode = (int)HttpStatusCode.BadRequest;
+                    }
+                        
+                }
+
+
+
+                var result = JsonSerializer.Serialize(new ApiResponse
+                {
+                    Message = errorMessage,
+                    ResponseStatus = ResponseMessages.ErrorStatus,
+                    ResponseCode = (HttpStatusCode)responseCode,
+                } , options);
+
+
+
+                await response.WriteAsync(result);
+            }
+            catch (Exception error) when (error is DataNotFoundException || error is InvalidChangesException || error is InvalidUserDataException || error is DuplicateInputException || error is InvalidInputException)
+            {
+                _logger.LogError(null, error, error.Message);
+
+
+
+                var response = httpContext.Response;
+                response.ContentType = "application/json";
+                response.StatusCode = (int)HttpStatusCode.BadRequest;
+
+
+
+                var result = JsonSerializer.Serialize(new ApiResponse
+                {
+                    Message = error.Message,
+                    ResponseStatus = ResponseMessages.ErrorStatus,
+                    ResponseCode = HttpStatusCode.BadRequest,
+                }, options);
+
+
+
+                await response.WriteAsync(result);
+            }
+            catch (Exception error)
+            {
+                _logger.LogError(null, error, error.Message);
+
+
+
+                var response = httpContext.Response;
+                response.ContentType = "application/json";
+                response.StatusCode = (int)HttpStatusCode.InternalServerError;
+
+
+
+                var result = JsonSerializer.Serialize(new ApiResponse
+                {
+                    Message = "Internal Error",
+                    ResponseStatus = ResponseMessages.ErrorStatus,
+                    ResponseCode = HttpStatusCode.InternalServerError,
+                }, options);
+
+
+
+                await response.WriteAsync(result);
+            }
+        }
+    }
+}
+
+And one of the implementation of the Custom Exception:-
+
+public class InvalidChangesException : Exception
+{
+     public InvalidChangesException()
+     {
+     }
+ 
+     public InvalidChangesException(string message) : base(message)
+     {
+     }
+ 
+     public InvalidChangesException(string message, Exception innerException) : base(message, innerException)
+     {
+     }
+ 
+     protected InvalidChangesException(SerializationInfo info, StreamingContext context) : base(info, context)
+     {
+     }
+}
+
+
+public class ApiResponse : BaseResponse
+{
+        [JsonPropertyName("response")]
+        public dynamic Response { get; set; }
+}
+
+public class BaseResponse
+{
+    [JsonPropertyName("statuscode")]
+    public HttpStatusCode StatusCode { get; set; }
+    [JsonPropertyName("message")]
+    public string Message { get; set; }
+    [JsonPropertyName("callstarttime")]
+    public string CallStartTime { get; set; }
+    [JsonPropertyName("callendtime")]
+    public string CallEndTime { get; set; }
+
+    private readonly string _dateTimeFormat = "yyyy-MM-dd HH:mm";
+
+    public BaseResponse()
+    {
+        this.CallStartTime = DateTime.UtcNow.ToString(_dateTimeFormat);
+        //this.ServerName = System.Environment.MachineName;
+    }
+
+    public void Complete()
+    {
+        this.CallEndTime = DateTime.UtcNow.ToString(_dateTimeFormat);
+    }
+}
+

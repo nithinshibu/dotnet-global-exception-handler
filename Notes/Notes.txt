@@ -1,0 +1,15 @@
+﻿Thanks to Mohamad Lawand.
+YouTube link: https://youtu.be/fBXOgrZ3ZC4?si=KkbqAJV6izpxZg2I
+
+
+Commands:-
+
+
+dotnet ef migrations add "initial_migration"
+
+dotnet ef database update
+
+
+If this error is encountered "Only the invariant culture is supported in globalization-invariant mode. See https://aka.ms/GlobalizationInvariantMode for more information. (Parameter 'name')
+en-us is an invalid culture identifier" , then in the csproj file set the InvariantGlobalization as false " <InvariantGlobalization>false</InvariantGlobalization>"
+
